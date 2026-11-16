@@ -32,15 +32,16 @@ Tous les entiers sont en little-endian. Un enregistrement commence par `02 00 00
 | 0x18 | 2 | Tension pack 1 (cV) |
 | 0x1A | 2 | Courant batterie (0,01 A, signé) |
 | 0x1C | 2 | Vitesse (0,01 km/h, signé) |
-| 0x1E | 2 | Brut corrélé au courant (×2,6) et à la vitesse, très bruité, offset ~12200 (signification incertaine) |
+| 0x1E | 2 | Commande type duty/modulation : ~800 à l'arrêt, ~18500 à 34 km/h, suit aussi le courant instantané (FEM + chute ohmique). Vraisemblablement Vq (tension q) |
+| 0x20 | 2 | Miroir négatif de 0x1E/0x22 (corr. −0,94 avec le courant) — vraisemblablement Vd (tension d) |
 | 0x20 | 2 | ≈ −4,2 × le champ 0x22 (signé) |
-| 0x22 | 2 | Courant filtré/consigne ≈ 0,785 × courant batterie (corr. 0,98, signé) |
-| 0x24 | 2 | Signal bimodal (0 ou ≈ −600 à −900), corrélé à vitesse et courant (signé) |
+| 0x22 | 2 | Courant de phase/q : pente vs courant batterie variant de 0,19 (0-10 km/h) à 1,30 (30-45 km/h), corr. 0,98 |
+| 0x24 | 2 | Courant d (désexcitation) : ≈ 0 sous 20 km/h, de plus en plus négatif avec la vitesse (≈ −7 A à 34 km/h) |
 | 0x26 | 2 | Tangage (0,01°, signé) |
 | 0x28 | 2 | Consigne de tangage (0,01°, signé) |
 | 0x2A | 2 | Roulis (0,01°, signé) |
 | 0x2E | 2 | Vitesse de tiltback (0,01 km/h) |
-| 0x30 | 2 | Limite de vitesse (0,01 km/h) |
+| 0x30 | 2 | Limite de vitesse active, dynamique : 1500/1800/3000/4000 (15/18/30/40 km/h configurés) et valeurs intermédiaires (1931, 1467, 2997) probablement de derating (batterie faible : 29,97 km/h relevé à 14 % de SOC) |
 | 0x32 | 2 | T° MOSFET ((raw − 50000)/100) |
 | 0x34 | 2 | T° carte ((raw − 50000)/100) |
 | 0x36 | 2 | T° batterie (raw/2) |
@@ -67,7 +68,9 @@ u32 LE, bits (origine 2020) :
 | 82 | Échantillon télémétrie 10 Hz (en roulage) |
 | 101 | Échantillon télémétrie (à l'arrêt) |
 | 81 / 83 | Début / fin de capture d'événement |
-| 8, 11, 12, 13, 17, 18, 20, 21, 23, 35, 36, 42, 68, 76 | Non élucidés |
+| 35 / 36 | Enregistrements de boot pré-télémétrie : IMU non calibré (tangage == roulis bruts identiques), températures invalides, pack 1 absent sur le type 35 (0x18 = 50) |
+| 76 | Unique occurrence : à 12 km/h, SOC 14 %, 68,2 V — cohérent avec un événement de batterie faible (limite réduite à 29,97 km/h dans le même enregistrement) |
+| 8, 11, 12, 13, 17, 18, 20, 21, 23, 42, 68 | Non élucidés (les types 8 et 42 encadrent souvent des changements de limite de vitesse, mais pas systématiquement) |
 
 ### Captures d'événements
 
@@ -75,8 +78,9 @@ Les types 81/83 encadrent un flux 10 Hz continu. Une « capture » est reconstru
 
 ## Champs non élucidés
 
-- Signification physique exacte de 0x1E, 0x20, 0x24 et des codes d'état constants de 0x11-0x17
-- Signification fine de certains types mineurs (8, 11-13, 17-23, 35, 36, 42)
+- Signification exacte des types mineurs restants (8, 11-13, 17-23, 42, 68)
+- Échelle exacte des commandes FOC (0x1E-0x25)
+- Valeurs intermédiaires de la limite 0x30 (derating ?)
 
 ## Licence
 
