@@ -22,16 +22,20 @@ Tous les entiers sont en little-endian. Un enregistrement commence par `02 00 00
 | Offset | Taille | Champ |
 |---|---|---|
 | 0x00 | 4 | Version (= 2, u32 LE) |
-| 0x04 | 3 | Compteur d'échantillons (rôle exact non élucidé) |
+| 0x04 | 1 | Compteur 8 bits +1 par échantillon périodique (wrap 256 ; 0 sur les événements ; stall d'écriture flash de 100 ms à chaque wrap) |
+| 0x05 | 2 | Temps de fonctionnement cumulé persistant, u16 LE en dixièmes de seconde (+1 par tick de 100 ms, continue entre allumages, wrap 65536 ≈ 1 h 49 min) |
 | 0x07 | 1 | Réservé (0xFF) |
 | 0x08 | 4 | Horloge RTC packée (u32 LE, voir ci-dessous) |
 | 0x0C | 4 | Uptime de la session en ms (u32 LE) |
 | 0x10 | 1 | Type d'événement |
-| 0x11 | 7 | Paramètres d'événement (sens par type inconnu) |
+| 0x11 | 7 | Paramètres d'événement : constantes par type (codes d'état, quasi toujours 0). Type 3 = (8,1,50), type 4 = (4,7,38), type 5 = (4,1,16), type 17 = (12,2,1,1), types 8 et 76 = 1 en 0x12 |
 | 0x18 | 2 | Tension pack 1 (cV) |
 | 0x1A | 2 | Courant batterie (0,01 A, signé) |
 | 0x1C | 2 | Vitesse (0,01 km/h, signé) |
-| 0x1E | 2 | Courant de phase (brut, signé) |
+| 0x1E | 2 | Brut corrélé au courant (×2,6) et à la vitesse, très bruité, offset ~12200 (signification incertaine) |
+| 0x20 | 2 | ≈ −4,2 × le champ 0x22 (signé) |
+| 0x22 | 2 | Courant filtré/consigne ≈ 0,785 × courant batterie (corr. 0,98, signé) |
+| 0x24 | 2 | Signal bimodal (0 ou ≈ −600 à −900), corrélé à vitesse et courant (signé) |
 | 0x26 | 2 | Tangage (0,01°, signé) |
 | 0x28 | 2 | Consigne de tangage (0,01°, signé) |
 | 0x2A | 2 | Roulis (0,01°, signé) |
@@ -71,9 +75,8 @@ Les types 81/83 encadrent un flux 10 Hz continu. Une « capture » est reconstru
 
 ## Champs non élucidés
 
-- Octets 0x04-0x06 (compteur)
-- Paramètres 0x11-0x17 par type
-- Signification fine de certains types mineurs
+- Signification physique exacte de 0x1E, 0x20, 0x24 et des codes d'état constants de 0x11-0x17
+- Signification fine de certains types mineurs (8, 11-13, 17-23, 35, 36, 42)
 
 ## Licence
 
