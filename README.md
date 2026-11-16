@@ -1,2 +1,80 @@
 # euc_diag_analysis
-some stuff to analyze InMotion Diagnostic files
+
+Outils d'analyse des fichiers de diagnostic InMotion (roues gyro unicycles, testé sur V9).
+
+Le fichier `log.bin` récupéré via l'app EUCRAW (Wheel Settings › Log DL › Download Log) est un buffer circulaire en flash d'enregistrements de 64 octets. Ces outils le décodent intégralement en local, sans upload.
+
+## Outils
+
+| Fichier | Rôle | Dépendances |
+|---|---|---|
+| `im_diag.html` | Web app offline monofichier : dépose un `.bin` (ou dump xxd) et obtiens un tableau de bord interactif (zoom/pan sur les graphiques, filtres, event analyzer par capture) | aucune — ouvrir dans un navigateur |
+| `report_ods.py` | Génère un classeur ODS multi-feuilles : Synthèse, Sorties, Allumages, Événements, Journal, Types, Graphiques. Exporte aussi les PNG dans `<rapport>_graphiques/` | `pip install odfpy matplotlib` |
+
+```bash
+python3 report_ods.py diag.bin [rapport.ods]
+```
+
+## Format binaire (64 octets/enregistrement)
+
+Tous les entiers sont en little-endian. Un enregistrement commence par `02 00 00 00` (u32 version) ; les slots effacés sont à `0xFF` complets.
+
+| Offset | Taille | Champ |
+|---|---|---|
+| 0x00 | 4 | Version (= 2, u32 LE) |
+| 0x04 | 3 | Compteur d'échantillons (rôle exact non élucidé) |
+| 0x07 | 1 | Réservé (0xFF) |
+| 0x08 | 4 | Horloge RTC packée (u32 LE, voir ci-dessous) |
+| 0x0C | 4 | Uptime de la session en ms (u32 LE) |
+| 0x10 | 1 | Type d'événement |
+| 0x11 | 7 | Paramètres d'événement (sens par type inconnu) |
+| 0x18 | 2 | Tension pack 1 (cV) |
+| 0x1A | 2 | Courant batterie (0,01 A, signé) |
+| 0x1C | 2 | Vitesse (0,01 km/h, signé) |
+| 0x1E | 2 | Courant de phase (brut, signé) |
+| 0x26 | 2 | Tangage (0,01°, signé) |
+| 0x28 | 2 | Consigne de tangage (0,01°, signé) |
+| 0x2A | 2 | Roulis (0,01°, signé) |
+| 0x2E | 2 | Vitesse de tiltback (0,01 km/h) |
+| 0x30 | 2 | Limite de vitesse (0,01 km/h) |
+| 0x32 | 2 | T° MOSFET ((raw − 50000)/100) |
+| 0x34 | 2 | T° carte ((raw − 50000)/100) |
+| 0x36 | 2 | T° batterie (raw/2) |
+| 0x38 | 2 | État de charge (%) |
+| 0x3A | 2 | T° moteur 1 ((raw − 50000)/100) |
+| 0x3C | 2 | T° moteur 2 ((raw − 50000)/100) |
+| 0x3E | 2 | Tension pack 2 (cV) |
+
+Valeurs invalides : `0xFFFF` ou hors plage physique → ignorées.
+
+### Horloge RTC packée (offset 0x08)
+
+u32 LE, bits (origine 2020) :
+
+`(année−2020)` bits 0-5 · `mois` bits 6-9 · `jour` bits 10-14 · `heure` bits 15-19 · `minute` bits 20-25 · `seconde` bits 26-31
+
+### Types d'événement
+
+| Type | Signification |
+|---|---|
+| 1-5 | Boot / mise sous tension (les sessions sont comptées dessus) |
+| 6 | Bouton / changement de mode |
+| 7 | Début de roulage |
+| 82 | Échantillon télémétrie 10 Hz (en roulage) |
+| 101 | Échantillon télémétrie (à l'arrêt) |
+| 81 / 83 | Début / fin de capture d'événement |
+| 8, 11, 12, 13, 17, 18, 20, 21, 23, 35, 36, 42, 68, 76 | Non élucidés |
+
+### Captures d'événements
+
+Les types 81/83 encadrent un flux 10 Hz continu. Une « capture » est reconstruite en fusionnant les échantillons périodiques autour d'une rupture du flux (gap > 1,5 s) : échantillons d'avant + d'après, avec l'entrée non-périodique présente dans le gap comme déclencheur. Les captures sans déclencheur correspondent à des coupures d'alimentation ou des arrêts log.
+
+## Champs non élucidés
+
+- Octets 0x04-0x06 (compteur)
+- Paramètres 0x11-0x17 par type
+- Signification fine de certains types mineurs
+
+## Licence
+
+Voir [LICENSE](LICENSE).
