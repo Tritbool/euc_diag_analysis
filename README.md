@@ -68,11 +68,24 @@ u32 LE, bits (origine 2020) :
 | 82 | Échantillon télémétrie 10 Hz (en roulage) |
 | 101 | Échantillon télémétrie (à l'arrêt) |
 | 81 / 83 | Début / fin de capture d'événement |
-| 35 / 36 | Enregistrements de boot pré-télémétrie : IMU non calibré (tangage == roulis bruts identiques), températures invalides, pack 1 absent sur le type 35 (0x18 = 50) |
-| 76 | Unique occurrence : à 12 km/h, SOC 14 %, 68,2 V — cohérent avec un événement de batterie faible (limite réduite à 29,97 km/h dans le même enregistrement) |
+| 35 / 36 | Enregistrements de boot pré-télémétrie : IMU non calibré (tangage == roulis bruts identiques), températures invalides, pack 1 absent sur le type 35 (0x18 = 50). Sur le type 36, 0x30 montre la limite de vitesse montant par paliers de 0,10 km/h (rampe de démarrage) |
+| 76 | Première alerte batterie faible : unique occurrence à 12 km/h, SOC 14 %, 68,2 V |
+| 11 / 42 | Étapes de derating de la limite de vitesse (alternance) — hypothèse |
+| 17 / 18 / 23 | Étapes de re-rating de la limite quand la tension revient — hypothèse |
 | 8, 11, 12, 13, 17, 18, 20, 21, 23, 42, 68 | Non élucidés (les types 8 et 42 encadrent souvent des changements de limite de vitesse, mais pas systématiquement) |
 
-### Captures d'événements
+### Derating batterie faible (épisode du 2026-07-13, hypothèse)
+
+À SOC 14 % (68 V), la limite de vitesse 0x30 descend par étapes, chaque étape journalisée comme événement : 29,97 (type 76) → 21,40 (11) → 19,31 (42) → 16,12 (11) → 14,67 (42) en ~20 s, puis 12,74 (17) → 14,90 (23) → 15,00 (18) après remontée à SOC 15 %. Le tiltback 0x2E suit légèrement (34,34 → 35,00). Au boot suivant (types 36), la limite remonte par paliers de 0,10 km/h — confirmation que 0x30 est la limite active, pas un réglage statique.
+
+### Commande moteur (0x1E-0x25, hypothèse FOC)
+
+- 0x1E : commande croissant avec la vitesse (~800 à l'arrêt, ~18 500 à 34 km/h) et le courant instantané — vraisemblablement Vq ou l'indice de modulation. Un fit linéaire Vq = a·vitesse + b·Iq ne donne que R² ≈ 0,5, donc l'échelle exacte reste inconnue
+- 0x20 : miroir négatif (corr. −0,94 avec le courant) — vraisemblablement Vd
+- 0x22 : courant de phase/q, pente vs courant batterie variant de 0,19 (0-10 km/h) à 1,30 (30-45 km/h)
+- 0x24 : courant d de désexcitation — ≈ 0 sous 20 km/h, ≈ −7 A à 34 km/h, corrélé à la vitesse même à courant contrôlé
+
+
 
 Les types 81/83 encadrent un flux 10 Hz continu. Une « capture » est reconstruite en fusionnant les échantillons périodiques autour d'une rupture du flux (gap > 1,5 s) : échantillons d'avant + d'après, avec l'entrée non-périodique présente dans le gap comme déclencheur. Les captures sans déclencheur correspondent à des coupures d'alimentation ou des arrêts log.
 
