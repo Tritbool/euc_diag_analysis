@@ -1,0 +1,175 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<title>LK diag — Log d'événements LeaperKim (page 32)</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+:root{--surface:#121315;--panel:#1a1b1e;--panel2:#222327;--line:#313236;--text:#d9d9d4;--muted:#8a8a84;--accent:#3987e5;--accent2:#199e70;--warn:#e6a23c;--bad:#e66767;--purple:#9085e9}
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:var(--surface);color:var(--text);font:14px/1.5 system-ui,sans-serif;padding:20px}
+h1{font-size:20px;margin-bottom:2px}h2{font-size:15px;margin-bottom:10px}
+.sub{color:var(--muted);margin-bottom:16px;font-size:13px}
+#drop{border:2px dashed var(--line);border-radius:10px;padding:28px;text-align:center;color:var(--muted);cursor:pointer;transition:border-color .15s}
+#drop.on{border-color:var(--accent);color:var(--text)}
+button,input[type=file]{display:none}
+#tabs{display:flex;gap:4px;margin:14px 0;flex-wrap:wrap}
+#tabs button{display:inline-block;padding:6px 14px;border:1px solid var(--line);border-bottom:none;border-radius:8px 8px 0 0;background:var(--panel);color:var(--muted);cursor:pointer;font:inherit}
+#tabs button.on{background:var(--panel2);color:var(--text);border-color:var(--accent)}
+table{border-collapse:collapse;width:100%;background:var(--panel);border-radius:8px;overflow:hidden;font-size:13px}
+th{color:var(--muted);text-align:left;font-weight:600;padding:7px 10px;background:var(--panel2);position:sticky;top:0}
+td{padding:5px 10px;border-top:1px solid var(--line);white-space:nowrap}
+.num{text-align:right;font-variant-numeric:tabular-nums}
+.mono{font-family:ui-monospace,monospace}
+.tiles{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:10px;margin-bottom:16px}
+.tile{background:var(--panel);border-radius:10px;padding:12px 14px;border-left:3px solid var(--accent)}
+.tile .l{color:var(--muted);font-size:11px;text-transform:uppercase;letter-spacing:.04em}
+.tile .v{font-size:21px;margin-top:2px}
+.tile .n{color:var(--muted);font-size:11px;margin-top:2px}
+.panel{background:var(--panel);border-radius:10px;padding:14px;margin-bottom:14px;overflow:auto}
+.bad{color:var(--bad)}.ok{color:var(--accent2)}.dim{color:var(--muted)}
+.chart{background:var(--panel);border-radius:8px;margin:8px 0}
+canvas{width:100%;display:block}
+.tag{font-size:11px;padding:1px 7px;border-radius:9px;background:var(--panel2)}
+.row-40 td{background:rgba(230,106,106,.07)}
+.row-env td{color:var(--muted)}
+@media(max-width:640px){body{padding:10px}.tile .v{font-size:17px}}
+</style>
+</head>
+<body>
+<h1>LK diag <span class="dim" style="font-weight:400">— log d'événements LeaperKim (page 32)</span></h1>
+<div class="sub">Fichier .txt de la roue (ou dump hex) — tout est analysé localement, aucun envoi.</div>
+<div id="drop">Déposer le log <span class="mono">leaperkim_….txt</span> (texte « #N time=… code=… values=[…] » ou dump hex)<br><label class="tag" style="cursor:pointer;display:inline-block;margin-top:8px;padding:4px 10px">Ouvrir<input type=file id=file accept=".txt,.log,.hex,.bin"></label></div>
+<div id="err" style="display:none" class="panel"></div>
+<div id="app" style="display:none">
+  <div id="tabs"></div>
+  <div id="view"></div>
+</div>
+<script>
+"use strict";
+// ---------- chargement ----------
+const hexRe=/^\s*[0-9a-fA-F]{4,16}:(\s+[0-9a-fA-F]{2,4})+/;
+function looksHexDump(s){const ls=s.split("\n");let n=0;for(const l of ls.slice(0,200))if(hexRe.test(l))n++;return n>ls.slice(0,200).filter(l=>l.trim()).length/2}
+function hexDumpToText(s){const out=[];for(const l of s.split("\n")){const c=l.indexOf(":");if(c<0)continue;const part=l.slice(c+1).split(/\s\s/)[0];const hs=part.match(/[0-9a-fA-F]{2}/g);if(hs)for(const h of hs)out.push(String.fromCharCode(parseInt(h,16)))}return out.join("")}
+function toText(buf){const u=new Uint8Array(buf);let s=new TextDecoder("utf-8",{fatal:false}).decode(u);if(looksHexDump(s))s=hexDumpToText(s);return s}
+// ---------- analyse ----------
+const REC=/#(\d+)\s+time=([\d.]+)\s+code=(\d+)\s+values=\[([^\]]*)\]/;
+function parse(s){const rs=[];for(const l of s.split("\n")){const m=l.match(REC);if(!m)continue;const t=m[2];rs.push({i:+m[1],time:/^\d+$/.test(t)&&+t>100000?+t:null,raw:t,code:+m[3],v:m[4].split(",").map(Number)})}return rs}
+function analyse(rs){
+  const fp=rs.find(r=>r.code===0);
+  const rides=[],volts=[],unplug=[],misc=[],clockLost=[];let slots=0;
+  for(const r of rs){
+    if(r.code===65535){slots++;continue}
+    r.time==null&&r.code!==0&&clockLost.push(r);
+    if(r.code===1){
+      if(r.v[3]!==0) volts.push({...r, V:((r.v[3]<<8)|(r.v[4]&0xFF))/100});
+      else{const D=(r.v[1]<<8)|(r.v[2]&0xFF);rides.push({...r, dist:D, temp:r.v[4]})}
+    }else if(r.code===2){
+      const V=(r.v[3]<<8)|(r.v[4]&0xFF);
+      unplug.push({...r, V:(r.v[3]>0&&r.v[3]<170)?V/100:null});
+    }else if(r.code!==0) misc.push(r);
+  }
+  rides.sort((a,b)=>(a.time||0)-(b.time||0));volts.sort((a,b)=>(a.time||0)-(b.time||0));
+  unplug.sort((a,b)=>(a.time||0)-(b.time||0));
+  const km=rides.reduce((s,r)=>s+r.dist,0)/1000;
+  const ts=rs.filter(r=>r.time).map(r=>r.time);
+  return {records:rs,fp,rides,volts,unplug,misc,clockLost,slots,km};
+}
+// ---------- rendu ----------
+const $=id=>document.getElementById(id);
+const F=(e,at,...kids)=>{const n=document.createElement(e);for(const k in at||{})if(at[k]!=null&&at[k]!==false){if(k.startsWith("on"))n.addEventListener(k.slice(2),at[k]);else if(["hidden","checked"].includes(k))n[k]=!!at[k];else n.setAttribute(k,at[k])}for(const k of kids.flat(9))k!=null&&n.append(k);return n};
+const fmtD=t=>t?new Date(t*1000).toLocaleString("fr-FR",{timeZone:"UTC",dateStyle:"short",timeStyle:"short"}):"—";
+const fmtC=t=>t?new Date(t*1000).toLocaleTimeString("fr-FR",{timeZone:"UTC",hour:"2-digit",minute:"2-digit"}):"—";
+const tile=(l,v,n)=>F("div",{class:"tile"},F("div",{class:"l"},l),F("div",{class:"v"},v),n?F("div",{class:"n"},n):null);
+const TABS=[["syn","Synthèse"],["rides","Sorties"],["evt","Journal"],["fmt","Format"]];
+function chart(host,title,pts,opt={}){
+  const cv=F("canvas");const wrap=F("div",{class:"chart"},F("div",{class:"sub"},title),cv);host.append(wrap);
+  const dpr=devicePixelRatio||1;const W=cv.clientWidth||600,H=opt.h||170;
+  cv.width=W*dpr;cv.height=H*dpr;cv.style.height=H+"px";
+  const x=cv.getContext("2d");x.scale(dpr,dpr);
+  const L=44,R=10,T=8,B=22;const xs=pts.map(p=>p.x),ys=pts.map(p=>p.y);
+  const x0=Math.min(...xs),x1=Math.max(...xs)||x0+1,y0=Math.min(...ys,0),y1=Math.max(...ys)||1;
+  const X=v=>L+(v-x0)/(x1-x0||1)*(W-L-R),Y=v=>T+(1-(v-y0)/(y1-y0||1))*(H-T-B);
+  x.font="11px system-ui";x.textAlign="right";x.textBaseline="middle";
+  for(let g=0;g<=4;g++){const v=y0+g*(y1-y0)/4;x.fillStyle="#8a8a84";x.fillText(Math.round(v*10)/10,L-6,T+(1-g/4)*(H-T-B));x.strokeStyle="#313236";x.beginPath();x.moveTo(L,T+(1-g/4)*(H-T-B));x.lineTo(W-R,T+(1-g/4)*(H-T-B));x.stroke()}
+  x.textAlign="center";x.textBaseline="top";
+  const step=(x1-x0)/5;for(let g=0;g<=5;g++)x.fillText(fmtC(x0+g*step),Math.min(L+g/5*(W-L-R),W-30),H-B+5);
+  x.strokeStyle=opt.color||"#3987e5";x.lineWidth=1.5;x.beginPath();let pen=false;
+  for(const p of pts){if(p.y==null){pen=false;continue}pen?x.lineTo(X(p.x),Y(p.y)):x.moveTo(X(p.x),Y(p.y));pen=true}
+  x.stroke();
+  if(opt.dots)for(const p of pts){if(p.y==null)continue;x.fillStyle=opt.color||"#3987e5";x.fillRect(X(p.x)-1.5,Y(p.y)-1.5,3,3)}
+}
+const CODES={0:"Empreinte roue",1:"BtnOff (extinction bouton)",2:"UnPlugCharger (débranche chargeur)",65535:"Slot effacé"};
+function render(a,name){
+  const v=$("view");v.textContent="";
+  const t=this.cur;const V=F("div");
+  if(t==="syn"){
+    const ts=a.records.filter(r=>r.time).map(r=>r.time),t0=ts.length?Math.min(...ts):null,t1=ts.length?Math.max(...ts):null;
+    v.append(F("div",{class:"tiles"},
+      tile("Fichier",name,String(a.records.length)+" enregistrements"),
+      tile("Période",(t0?new Date(t0*1000).toLocaleDateString("fr-FR"):"—")+" → "+(t1?new Date(t1*1000).toLocaleDateString("fr-FR"):"—"),ts.length&&t1>t0?Math.round((t1-t0)/86400)+" jours":""),
+      tile("Sorties",String(a.rides.length),"extinctions bouton avec résumé"),
+      tile("Distance cumulée",a.km.toFixed(1)+" km"),
+      tile("Tension repos",a.volts.length?(Math.min(...a.volts.map(r=>r.V)).toFixed(1)+" – "+Math.max(...a.volts.map(r=>r.V)).toFixed(1)+" V"):"—",a.volts.length+" mesures"),
+      tile("Charge",a.unplug.length+" débranchements",a.unplug.filter(r=>r.V).map(r=>r.V.toFixed(1)+" V").join(", ")),
+      tile("Empreinte",a.fp?"["+a.fp.v.join(", ")+"]":"—","ID proc ×2, modèle FW, minor, patch"),
+      tile("Horloge perdue",String(a.clockLost.length),a.clockLost.length?"écrits avant synchro":""),
+      tile("Slots effacés",String(a.slots)),
+      tile("Autres événements",String(a.misc.length),a.misc.length?a.misc.map(r=>"code "+r.code).join(", "):"")
+    ));
+    if(a.rides.length) chart(v,"Distance par sortie (m)",a.rides.map(r=>({x:r.time||r.i,y:r.dist})),{dots:1,color:"#3987e5",h:180});
+    if(a.volts.length) chart(v,"Tension pack à l'extinction (V)",a.volts.map(r=>({x:r.time||r.i,y:r.V})),{dots:1,color:"#199e70"});
+  }
+  if(t==="rides"){
+    const th=F("tr",null,["Date","Distance","v4 (T° ?)"].map(h=>F("th",null,h)));
+    const tb=F("tbody",null,a.rides.map(r=>F("tr",null,
+      F("td",null,fmtD(r.time)),
+      F("td",{class:"num"},r.dist+" m"),
+      F("td",{class:"num"},String(r.temp)))));
+    v.append(F("div",{class:"panel"},F("h2",null,"Sorties — résumés BtnOff ("+a.rides.length+")"),
+      F("table",null,F("thead",null,th),tb)));
+  }
+  if(t==="evt"){
+    v.append(F("div",{class:"sub"},a.records.length+" enregistrements, du plus récent au plus ancien."));
+    v.append(F("div",{class:"panel"},F("table",null,
+      F("thead",null,F("tr",null,["#","Date","Code","Événement","v0","v1","v2","v3","v4","Lecture"].map(h=>F("th",null,h)))),
+      F("tbody",null,a.records.map(r=>{
+        let read="";
+        if(r.code===1)read=r.v[3]!==0?("V="+(((r.v[3]<<8)|(r.v[4]&0xFF))/100).toFixed(2)):(r.v[1]||r.v[2]?("dist="+((r.v[1]<<8)|(r.v[2]&0xFF))+" m"):"");
+        if(r.code===2&&r.v[3]>0&&r.v[3]<170)read="V="+(((r.v[3]<<8)|(r.v[4]&0xFF))/100).toFixed(2);
+        if(r.code===40)read="v0≈tension "+r.v[0]+" V ?";
+        return F("tr",{class:r.code===40?"row-40":r.code===0?"row-env":""},
+          F("td",{class:"num"},String(r.i)),F("td",null,r.time==null?F("span",{class:"dim mono"},r.raw):fmtD(r.time)),
+          F("td",{class:"mono"},String(r.code)),F("td",null,CODES[r.code]||("Code "+r.code+" (inconnu)")),
+          ...r.v.map(x=>F("td",{class:"num mono"},String(x))),F("td",null,read))
+      })))));
+  }
+  if(t==="fmt") v.append(F("div",{class:"panel"},
+    F("h2",null,"Format « page 32 » LeaperKim"),
+    F("div",{class:"sub"},"L'ancien format de log d'événements (loeuc-core : parseLeaperKimLogPage32Records). Chaque ligne : #index, time = seconde Unix BE ou 0.0.0.0 (horloge non réglée), code u16, values = 5 octets bruts signés."),
+    F("table",null,F("tbody",null,
+      [["code 0","Empreinte roue, écrite avant chaque événement : [ID proc ×2, modèle FW, minor, patch] — constante pour une roue donnée"],
+       ["code 1","BtnOff : extinction par bouton. Variante résumé : v1,v2 = distance (m) u16 BE (v2 signé, masqué 0xFF) ; v0=v3=0 ; v4 = température °C probable. Variante tension : v3,v4 = tension pack u16 BE en centivolts (horloge souvent perdue)"],
+       ["code 2","UnPlugCharger : chargeur débranché ; v3,v4 = tension au débranchement"],
+       ["code 40","Inconnu — v0 ≈ tension pack ; survenu par 3 en 43 s de nuit"],
+       ["code 65535","Slot de flash effacé (fin de buffer)"]].map(row=>F("tr",null,F("td",{class:"mono"},row[0]),F("td",null,row[1])))))));
+}
+// ---------- app ----------
+let A=null;const S={cur:"syn"};
+function tabs(){const T=$("tabs");T.textContent="";
+  for(const[id,l]of TABS){T.append(F("button",{class:S.cur===id?"on":"",onclick(){S.cur=id;go()}},l))}}
+function go(){if(!A)return;$("app").style.display="";tabs();render.call(S,A,A.name)}
+function load(file){const rd=new FileReader();
+  rd.onload=()=>{let txt=toText(rd.result);A=analyse(parse(txt));A.name=file.name;
+    if(A.records.length===0){$("err").style.display="";$("err").textContent="Aucun enregistrement reconnu dans "+file.name+" (attendu : #N time=… code=… values=[…]).";$("app").style.display="none";return}
+    $("err").style.display="none";go()};
+  rd.readAsArrayBuffer(file)}
+const drop=$("drop");
+drop.addEventListener("click",()=>$("file").click());
+$("file").addEventListener("change",e=>{const f=e.target.files[0];if(f)load(f);e.target.value=""});
+addEventListener("dragover",e=>{e.preventDefault();drop.classList.add("on")});
+addEventListener("dragleave",()=>drop.classList.remove("on"));
+addEventListener("drop",e=>{e.preventDefault();drop.classList.remove("on");const f=e.dataTransfer.files[0];if(f)load(f)});
+</script>
+</body>
+</html>
